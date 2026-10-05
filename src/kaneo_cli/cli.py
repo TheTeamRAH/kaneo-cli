@@ -11,6 +11,19 @@ from .client import ApiClient, ApiError, client_from_environment
 
 
 def _payload(args: argparse.Namespace, *, include_project: bool = False) -> dict[str, Any]:
+    """Build a Kaneo task payload from parsed command-line arguments.
+
+    Args:
+        args: Parsed arguments containing optional task fields.
+        include_project: Whether to include the parsed project identifier.
+
+    Returns:
+        A mapping containing only task fields whose values were provided.
+
+    Examples:
+        Input: a namespace with ``title="Fix bug"`` and ``priority="high"``.
+        Output: ``{"title": "Fix bug", "priority": "high"}``.
+    """
     values = {
         "title": getattr(args, "title", None),
         "description": getattr(args, "description", None),
@@ -24,6 +37,16 @@ def _payload(args: argparse.Namespace, *, include_project: bool = False) -> dict
 
 
 def _emit(value: Any, as_json: bool) -> None:
+    """Print a command result in human-readable or compact JSON form.
+
+    Args:
+        value: Scalar, mapping, or sequence returned by an API operation.
+        as_json: Whether to use compact JSON output.
+
+    Examples:
+        Input: ``{"id": "task-1"}`` and ``as_json=True``.
+        Output: one line containing ``{"id":"task-1"}``.
+    """
     if as_json:
         print(json.dumps(value, sort_keys=True, separators=(",", ":")))
     elif isinstance(value, (dict, list)):
@@ -33,6 +56,22 @@ def _emit(value: Any, as_json: bool) -> None:
 
 
 def _run(args: argparse.Namespace, client: ApiClient) -> Any:
+    """Dispatch parsed resource arguments to the matching API operation.
+
+    Args:
+        args: Parsed command-line namespace with resource and verb fields.
+        client: API client used to perform the selected operation.
+
+    Returns:
+        The operation result, ready for output formatting.
+
+    Raises:
+        ApiError: If no supported command is selected.
+
+    Examples:
+        Input: ``Namespace(resource="workspace", verb="list")``.
+        Output: the list returned by ``client.list_workspaces()``.
+    """
     if args.resource == "workspace":
         return client.list_workspaces()
     if args.resource == "project":
@@ -51,10 +90,30 @@ def _run(args: argparse.Namespace, client: ApiClient) -> Any:
 
 
 def _add_json(parser: argparse.ArgumentParser) -> None:
+    """Add the shared ``--json`` output option to a subparser.
+
+    Args:
+        parser: Subparser that should accept machine-readable output.
+
+    Examples:
+        Input: an ``ArgumentParser`` for ``task list``.
+        Output: the parser accepts ``--json`` and sets ``args.json`` to ``True``.
+    """
     parser.add_argument("--json", action="store_true", help="emit compact JSON for scripts")
 
 
 def _add_task_fields(parser: argparse.ArgumentParser, required_title: bool = False) -> None:
+    """Add common task creation and update options to a subparser.
+
+    Args:
+        parser: Subparser that should accept task fields.
+        required_title: Whether ``--title`` must be supplied.
+
+    Examples:
+        Input: a task-create parser with ``required_title=True``.
+        Output: parsed arguments include ``title``, ``description``, and other
+        optional task fields, with ``title`` required.
+    """
     parser.add_argument("--title", required=required_title, help="task title")
     parser.add_argument("--description", help="task description")
     parser.add_argument("--column-id", help="Kaneo column ID")
@@ -64,7 +123,15 @@ def _add_task_fields(parser: argparse.ArgumentParser, required_title: bool = Fal
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the Kaneo argument parser."""
+    """Build the Kaneo argument parser.
+
+    Returns:
+        A parser containing workspace, project, task, and comment subcommands.
+
+    Examples:
+        Input: no arguments.
+        Output: a parser that accepts ``task list --project-id project-1``.
+    """
     parser = argparse.ArgumentParser(
         prog="kaneo", description="Manage a self-hosted Kaneo instance"
     )
@@ -119,7 +186,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None, client: ApiClient | None = None) -> int:
-    """Run the CLI and return a process exit status."""
+    """Run the CLI and return a process exit status.
+
+    Args:
+        argv: Optional argument list; defaults to the process command line.
+        client: Optional client, primarily useful for embedding and tests.
+
+    Returns:
+        ``0`` for success or ``1`` when an API error is reported.
+
+    Examples:
+        Input: ``["workspace", "list"]`` with an injected client.
+        Output: ``0`` after printing the workspace response.
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
