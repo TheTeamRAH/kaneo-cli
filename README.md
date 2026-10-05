@@ -27,7 +27,9 @@ uv run kaneo task update TASK_ID --title "Release candidate"
 uv run kaneo comment create --task-id TASK_ID --content "Ready for review"
 ```
 
-The CLI uses the server's `/api` base, bearer authentication, compact stable JSON with `--json`, and actionable errors on stderr. Task updates read the existing task, preserve unrelated fields, and read it back after the update.
+The CLI uses the server's `/api` base, bearer authentication, compact stable JSON with `--json`, and actionable errors on stderr. Task creation sends `POST /task/{projectId}` with the project ID in the path, and comments use `POST /comment/{taskId}`. Task updates read the existing task, preserve unrelated fields, and read it back after the update.
+
+`workspace list` currently uses `GET /workspace` as a compatibility assumption. The published Kaneo OpenAPI document documents `GET /user/me` but does not document a workspace collection route; see [the API observation](docs/observations/2026-10-05-kaneo-openapi.md).
 
 Kaneo credentials must be supplied through a private environment or secret manager; do not commit them or place them in normal command output.
 

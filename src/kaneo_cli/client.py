@@ -100,7 +100,13 @@ class ApiClient:
         return self.transport.request(method, path, **kwargs)  # type: ignore[union-attr]
 
     def list_workspaces(self) -> Any:
-        """Return workspaces visible to the authenticated user."""
+        """Return workspaces using Kaneo's compatibility workspace route.
+
+        The published OpenAPI document exposes ``GET /user/me`` but does not
+        document a workspace collection endpoint.  ``GET /workspace`` is kept
+        as an explicit compatibility assumption for deployments that provide
+        that known route; it is not presented as an OpenAPI-documented route.
+        """
         return self._request("GET", "/workspace")
 
     def list_projects(self, workspace_id: str) -> Any:
@@ -117,9 +123,9 @@ class ApiClient:
         """Return one task by ID."""
         return self._request("GET", f"/task/{task_id}")
 
-    def create_task(self, payload: dict[str, Any]) -> Any:
+    def create_task(self, project_id: str, payload: dict[str, Any]) -> Any:
         """Create a task and read it back when an ID is returned."""
-        created = self._request("POST", "/task", payload=payload)
+        created = self._request("POST", f"/task/{project_id}", payload=payload)
         if isinstance(created, dict) and created.get("id"):
             return self.get_task(str(created["id"]))
         return created
@@ -135,7 +141,7 @@ class ApiClient:
 
     def create_task_comment(self, task_id: str, content: str) -> Any:
         """Add a comment to a task."""
-        return self._request("POST", f"/task/{task_id}/comment", payload={"content": content})
+        return self._request("POST", f"/comment/{task_id}", payload={"content": content})
 
 
 def client_from_environment() -> ApiClient:

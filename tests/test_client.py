@@ -22,6 +22,36 @@ def test_list_projects_uses_workspace_query():
     assert transport.calls == [("GET", "/project", {"workspaceId": "w1"}, None)]
 
 
+def test_list_workspaces_uses_compatibility_route():
+    transport = FakeTransport([[{"id": "w1", "name": "Main"}]])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert client.list_workspaces() == [{"id": "w1", "name": "Main"}]
+    assert transport.calls == [("GET", "/workspace", None, None)]
+
+
+def test_create_task_uses_project_path_and_excludes_project_from_payload():
+    created = {"id": "t1"}
+    task = {"id": "t1", "projectId": "p1", "title": "Prepare"}
+    transport = FakeTransport([created, task])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert client.create_task("p1", {"title": "Prepare"}) == task
+    assert transport.calls == [
+        ("POST", "/task/p1", None, {"title": "Prepare"}),
+        ("GET", "/task/t1", None, None),
+    ]
+
+
+def test_create_task_comment_uses_comment_path():
+    response = {"id": "c1", "content": "Ready"}
+    transport = FakeTransport([response])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert client.create_task_comment("t1", "Ready") == response
+    assert transport.calls == [("POST", "/comment/t1", None, {"content": "Ready"})]
+
+
 def test_list_tasks_returns_board_response_with_pagination():
     board = {"columns": [{"id": "todo", "tasks": [{"id": "t1"}]}], "pagination": {"page": 1}}
     transport = FakeTransport([board])

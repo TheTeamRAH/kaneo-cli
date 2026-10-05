@@ -41,7 +41,7 @@ def _run(args: argparse.Namespace, client: ApiClient) -> Any:
     if args.resource == "task" and args.verb == "show":
         return client.get_task(args.task_id)
     if args.resource == "task" and args.verb == "create":
-        return client.create_task(_payload(args, include_project=True))
+        return client.create_task(args.project_id, _payload(args))
     if args.resource == "task" and args.verb == "update":
         return client.update_task(args.task_id, _payload(args))
     if args.resource == "comment":
