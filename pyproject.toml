@@ -1,0 +1,31 @@
+[project]
+name = "kaneo-cli"
+version = "0.1.0"
+description = "A scriptable command-line client for the Kaneo API"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "whose-footprints-are-these" }]
+dependencies = []
+
+[project.scripts]
+kaneo = "kaneo_cli.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kaneo_cli"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
