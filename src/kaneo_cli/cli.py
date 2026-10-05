@@ -5,9 +5,22 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from importlib.metadata import version
 from typing import Any
 
 from .client import ApiClient, ApiError, client_from_environment
+
+
+def _package_version() -> str:
+    """Return the installed Kaneo CLI distribution version.
+
+    Returns:
+        The version declared by the ``kaneo-cli`` package metadata.
+
+    Raises:
+        importlib.metadata.PackageNotFoundError: If package metadata is absent.
+    """
+    return version("kaneo-cli")
 
 
 def _payload(args: argparse.Namespace, *, include_project: bool = False) -> dict[str, Any]:
@@ -142,6 +155,12 @@ def build_parser() -> argparse.ArgumentParser:
             "disable TLS certificate and hostname verification (INSECURE; only use "
             "for trusted self-hosted deployments with private certificates)"
         ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"kaneo-cli {_package_version()}",
+        help="show the installed Kaneo CLI version and exit",
     )
     resources = parser.add_subparsers(dest="resource", required=True)
 
