@@ -1,7 +1,7 @@
 ---
 type: Feature Specification
 title: Kaneo CLI bootstrap
-status: proposed
+status: implemented
 ---
 
 # Kaneo CLI bootstrap
