@@ -66,6 +66,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kaneo", description="Manage a self-hosted Kaneo instance"
     )
+    parser.add_argument(
+        "--no-tls-verify",
+        action="store_true",
+        help=(
+            "disable TLS certificate and hostname verification (INSECURE; only use "
+            "for trusted self-hosted deployments with private certificates)"
+        ),
+    )
     resources = parser.add_subparsers(dest="resource", required=True)
 
     workspace = resources.add_parser("workspace", help="workspace operations")
@@ -113,7 +121,10 @@ def main(argv: list[str] | None = None, client: ApiClient | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        result = _run(args, client or client_from_environment())
+        result = _run(
+            args,
+            client or client_from_environment(verify_tls=not args.no_tls_verify),
+        )
         _emit(result, args.json)
     except ApiError as error:
         print(f"error: {error}", file=sys.stderr)

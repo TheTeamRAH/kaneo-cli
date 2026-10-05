@@ -1,4 +1,7 @@
-from kaneo_cli.client import ApiClient, ApiError
+import ssl
+
+import kaneo_cli.client as client_module
+from kaneo_cli.client import ApiClient, ApiError, HttpTransport
 
 
 class FakeTransport:
@@ -22,12 +25,72 @@ def test_list_projects_uses_workspace_query():
     assert transport.calls == [("GET", "/project", {"workspaceId": "w1"}, None)]
 
 
-def test_list_workspaces_uses_compatibility_route():
+def test_list_workspaces_uses_verified_organization_route():
     transport = FakeTransport([[{"id": "w1", "name": "Main"}]])
     client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
 
     assert client.list_workspaces() == [{"id": "w1", "name": "Main"}]
-    assert transport.calls == [("GET", "/workspace", None, None)]
+    assert transport.calls == [("GET", "/auth/organization/list", None, None)]
+
+
+class _Response:
+    def __init__(self, body=b'{"ok": true}'):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return self.body
+
+
+def test_http_transport_verifies_tls_by_default(monkeypatch):
+    calls = []
+
+    def fake_urlopen(request, *, timeout, context):
+        calls.append((request, timeout, context))
+        return _Response()
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    assert HttpTransport("https://kaneo.example/api", "secret").request("GET", "/health") == {
+        "ok": True
+    }
+    assert calls[0][2].verify_mode == ssl.CERT_REQUIRED
+    assert calls[0][2].check_hostname is True
+
+
+def test_http_transport_can_explicitly_disable_tls_verification(monkeypatch):
+    calls = []
+
+    def fake_urlopen(request, *, timeout, context):
+        calls.append((request, timeout, context))
+        return _Response()
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    HttpTransport("https://kaneo.example/api", "secret", verify_tls=False).request(
+        "GET", "/health"
+    )
+    assert calls[0][2].verify_mode == ssl.CERT_NONE
+    assert calls[0][2].check_hostname is False
+
+
+def test_api_client_passes_tls_setting_to_http_transport(monkeypatch):
+    transports = []
+
+    class RecordingTransport(HttpTransport):
+        def __init__(self, *args, **kwargs):
+            transports.append(kwargs["verify_tls"])
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(client_module, "HttpTransport", RecordingTransport)
+
+    ApiClient("https://kaneo.example", "secret", verify_tls=False)
+    assert transports == [False]
 
 
 def test_create_task_uses_project_path_and_excludes_project_from_payload():

@@ -36,3 +36,16 @@ def test_cli_reports_missing_key_without_traceback(capsys, monkeypatch):
 
     assert main(["workspace", "list"]) == 1
     assert "KANEO_API_KEY" in capsys.readouterr().err
+
+
+def test_cli_no_tls_verify_is_explicit_and_passed_to_client(monkeypatch):
+    received = []
+
+    def fake_client_from_environment(*, verify_tls):
+        received.append(verify_tls)
+        return ApiClient("https://kaneo.example/api", "secret", transport=FakeTransport([[]]))
+
+    monkeypatch.setattr("kaneo_cli.cli.client_from_environment", fake_client_from_environment)
+
+    assert main(["--no-tls-verify", "workspace", "list"]) == 0
+    assert received == [False]

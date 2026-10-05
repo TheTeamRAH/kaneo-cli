@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
@@ -30,10 +31,17 @@ class Transport(Protocol):
 class HttpTransport:
     """Small urllib transport that sends bearer-authenticated JSON requests."""
 
-    def __init__(self, base_url: str, api_key: str, timeout: float = 30.0) -> None:
+    def __init__(
+        self, base_url: str, api_key: str, timeout: float = 30.0, verify_tls: bool = True
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+        self.verify_tls = verify_tls
+        self.ssl_context = ssl.create_default_context()
+        if not verify_tls:
+            self.ssl_context.check_hostname = False
+            self.ssl_context.verify_mode = ssl.CERT_NONE
 
     def request(
         self,
@@ -61,7 +69,7 @@ class HttpTransport:
             method=method,
         )
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with urlopen(request, timeout=self.timeout, context=self.ssl_context) as response:
                 raw = response.read()
         except HTTPError as error:
             detail = error.read().decode(errors="replace")[:300]
@@ -88,26 +96,21 @@ class ApiClient:
     base_url: str
     api_key: str
     transport: Transport | None = None
+    verify_tls: bool = True
 
     def __post_init__(self) -> None:
         self.base_url = self.base_url.rstrip("/")
         if not self.base_url.endswith("/api"):
             self.base_url += "/api"
         if self.transport is None:
-            self.transport = HttpTransport(self.base_url, self.api_key)
+            self.transport = HttpTransport(self.base_url, self.api_key, verify_tls=self.verify_tls)
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         return self.transport.request(method, path, **kwargs)  # type: ignore[union-attr]
 
     def list_workspaces(self) -> Any:
-        """Return workspaces using Kaneo's compatibility workspace route.
-
-        The published OpenAPI document exposes ``GET /user/me`` but does not
-        document a workspace collection endpoint.  ``GET /workspace`` is kept
-        as an explicit compatibility assumption for deployments that provide
-        that known route; it is not presented as an OpenAPI-documented route.
-        """
-        return self._request("GET", "/workspace")
+        """Return the workspaces visible to the authenticated user."""
+        return self._request("GET", "/auth/organization/list")
 
     def list_projects(self, workspace_id: str) -> Any:
         """Return projects belonging to ``workspace_id``."""
@@ -144,9 +147,15 @@ class ApiClient:
         return self._request("POST", f"/comment/{task_id}", payload={"content": content})
 
 
-def client_from_environment() -> ApiClient:
-    """Construct a client from ``KANEO_API_KEY`` and ``KANEO_API_URL``."""
+def client_from_environment(*, verify_tls: bool = True) -> ApiClient:
+    """Construct a client from environment settings.
+
+    Args:
+        verify_tls: Whether to verify the server certificate and hostname.
+    """
     key = os.getenv("KANEO_API_KEY")
     if not key:
         raise ApiError("KANEO_API_KEY is required; set it in the environment")
-    return ApiClient(os.getenv("KANEO_API_URL", "http://localhost:1337"), key)
+    return ApiClient(
+        os.getenv("KANEO_API_URL", "http://localhost:1337"), key, verify_tls=verify_tls
+    )
