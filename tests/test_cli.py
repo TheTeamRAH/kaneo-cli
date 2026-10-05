@@ -31,6 +31,45 @@ def test_cli_task_create_uses_project_path_without_project_body_field(capsys):
     assert capsys.readouterr().out == '{"id":"t1","projectId":"p1","title":"Prepare"}\n'
 
 
+def test_cli_task_status_is_sent_as_api_status_for_create_and_update():
+    transport = FakeTransport([
+        {"id": "t1"},
+        {"id": "t1", "status": "feature-review"},
+        {"id": "t1", "title": "Prepare"},
+        {},
+        {"id": "t1", "title": "Prepare", "status": "feature-review"},
+    ])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert main(
+        [
+            "task",
+            "create",
+            "--project-id",
+            "p1",
+            "--title",
+            "Prepare",
+            "--status",
+            "feature-review",
+        ],
+        client=client,
+    ) == 0
+    assert main(
+        ["task", "update", "t1", "--status", "feature-review"],
+        client=client,
+    ) == 0
+
+    assert transport.calls[0] == ("POST", "/task/p1", None, {
+        "title": "Prepare",
+        "status": "feature-review",
+    })
+    assert transport.calls[3] == ("PUT", "/task/t1", None, {
+        "id": "t1",
+        "title": "Prepare",
+        "status": "feature-review",
+    })
+
+
 def test_cli_reports_missing_key_without_traceback(capsys, monkeypatch):
     monkeypatch.delenv("KANEO_API_KEY", raising=False)
 

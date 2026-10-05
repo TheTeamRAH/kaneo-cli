@@ -24,12 +24,12 @@ uv run kaneo workspace list --json
 uv run kaneo --no-tls-verify workspace list --json
 uv run kaneo project list --workspace-id WORKSPACE_ID --json
 uv run kaneo task list --project-id PROJECT_ID --json
-uv run kaneo task create --project-id PROJECT_ID --title "Prepare release"
-uv run kaneo task update TASK_ID --title "Release candidate"
+uv run kaneo task create --project-id PROJECT_ID --title "Prepare release" --status todo
+uv run kaneo task update TASK_ID --status feature-review
 uv run kaneo comment create --task-id TASK_ID --content "Ready for review"
 ```
 
-The CLI uses the server's `/api` base, bearer authentication, TLS certificate and hostname verification by default, compact stable JSON with `--json`, and actionable errors on stderr. Task creation sends `POST /task/{projectId}` with the project ID in the path, and comments use `POST /comment/{taskId}`. Task updates read the existing task, preserve unrelated fields, and read it back after the update.
+The CLI uses the server's `/api` base, bearer authentication, TLS certificate and hostname verification by default, compact stable JSON with `--json`, and actionable errors on stderr. Task creation sends `POST /task/{projectId}` with the project ID in the path, and comments use `POST /comment/{taskId}`. Use `--status` with a Kaneo status column slug (for example, `feature-review`); it is sent as the API `status` field. The existing `--column-id` option remains available and is not remapped. Task updates read the existing task, preserve unrelated fields, and read it back after the update.
 
 `workspace list` uses Kaneo's verified `GET /auth/organization/list` endpoint. The `--no-tls-verify` option is an explicit, insecure opt-in for self-hosted deployments whose private certificates are not trusted by the system; do not use it on untrusted networks. See [the API observation](docs/observations/2026-10-05-kaneo-openapi.md).
 
@@ -39,6 +39,7 @@ Kaneo credentials must be supplied through a private environment or secret manag
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-10-05-21-00 | Add explicit task status option for Kaneo task mutations | [Explicit task status option](docs/features/2026-10-05-21-00-task-status-option.md) | whose-footprints-are-these |
 | 2026-10-05-20-30 | Correct workspace discovery and add explicit opt-in TLS bypass | [Workspace endpoint and TLS](docs/features/2026-10-05-20-30-workspace-endpoint-and-tls.md) | whose-footprints-are-these |
 | 2026-10-05-19-10 | Direct CLI for workspaces, projects, tasks, and comments | [Kaneo CLI bootstrap](docs/features/2026-10-05-19-10-kaneo-cli-bootstrap.md) | whose-footprints-are-these |
 

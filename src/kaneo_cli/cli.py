@@ -16,6 +16,7 @@ def _payload(args: argparse.Namespace, *, include_project: bool = False) -> dict
         "description": getattr(args, "description", None),
         "projectId": getattr(args, "project_id", None) if include_project else None,
         "columnId": getattr(args, "column_id", None),
+        "status": getattr(args, "status", None),
         "priority": getattr(args, "priority", None),
         "dueDate": getattr(args, "due_date", None),
     }
@@ -57,6 +58,7 @@ def _add_task_fields(parser: argparse.ArgumentParser, required_title: bool = Fal
     parser.add_argument("--title", required=required_title, help="task title")
     parser.add_argument("--description", help="task description")
     parser.add_argument("--column-id", help="Kaneo column ID")
+    parser.add_argument("--status", help="Kaneo task status column slug")
     parser.add_argument("--priority", help="task priority")
     parser.add_argument("--due-date", help="due date in the server's accepted format")
 
