@@ -144,6 +144,18 @@ def test_update_task_reads_existing_and_preserves_unrelated_fields():
     ]
 
 
+def test_update_task_status_uses_dedicated_endpoint_and_reads_back_task():
+    updated = {"id": "t1", "title": "Prepare", "status": "feature-review"}
+    transport = FakeTransport([{}, updated])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert client.update_task("t1", {"status": "feature-review"}) == updated
+    assert transport.calls == [
+        ("PUT", "/task/status/t1", None, {"status": "feature-review"}),
+        ("GET", "/task/t1", None, None),
+    ]
+
+
 def test_api_error_has_actionable_message_without_secret():
     transport = FakeTransport([ApiError("Kaneo returned 401: check KANEO_API_KEY")])
     client = ApiClient("https://kaneo.example/api", "secret", transport=transport)

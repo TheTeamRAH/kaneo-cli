@@ -134,12 +134,31 @@ class ApiClient:
         return created
 
     def update_task(self, task_id: str, changes: dict[str, Any]) -> Any:
-        """Apply changes to a full task object and read back the exact task."""
+        """Apply task changes using the narrow status route when appropriate.
+
+        Status-only changes use Kaneo's dedicated status endpoint. All other
+        changes retain the full-object update behavior required by Kaneo.
+        """
+        if set(changes) == {"status"}:
+            return self.update_task_status(task_id, changes["status"])
         existing = self.get_task(task_id)
         if not isinstance(existing, dict):
             raise ApiError("Kaneo returned no task object to update")
         payload = {**existing, **changes}
         self._request("PUT", f"/task/{task_id}", payload=payload)
+        return self.get_task(task_id)
+
+    def update_task_status(self, task_id: str, status: Any) -> Any:
+        """Set a task's status through Kaneo's dedicated endpoint.
+
+        Args:
+            task_id: Kaneo task identifier.
+            status: Status column slug accepted by the server.
+
+        Returns:
+            The task read back after the status mutation.
+        """
+        self._request("PUT", f"/task/status/{task_id}", payload={"status": status})
         return self.get_task(task_id)
 
     def create_task_comment(self, task_id: str, content: str) -> Any:

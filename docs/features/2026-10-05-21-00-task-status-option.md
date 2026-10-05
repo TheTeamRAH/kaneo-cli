@@ -14,9 +14,12 @@ Allow users to move a Kaneo task by its status column slug, including the
 ## Scope
 
 - Add `--status` to `task create` and `task update`.
-- Send the option as the Kaneo API `status` payload field.
+- Send the option as the Kaneo API `status` payload field. For status-only
+  updates, use `PUT /task/status/{taskId}` rather than the generic full-object
+  update route, then read the task back.
 - Preserve the existing `--column-id` option without remapping it.
-- Cover create and update payloads with focused CLI tests.
+- Cover create and update payloads and the dedicated status endpoint with
+  focused client and CLI tests.
 
 ## Verification requirements
 

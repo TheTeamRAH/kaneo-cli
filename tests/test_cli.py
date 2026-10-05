@@ -35,7 +35,6 @@ def test_cli_task_status_is_sent_as_api_status_for_create_and_update():
     transport = FakeTransport([
         {"id": "t1"},
         {"id": "t1", "status": "feature-review"},
-        {"id": "t1", "title": "Prepare"},
         {},
         {"id": "t1", "title": "Prepare", "status": "feature-review"},
     ])
@@ -63,11 +62,10 @@ def test_cli_task_status_is_sent_as_api_status_for_create_and_update():
         "title": "Prepare",
         "status": "feature-review",
     })
-    assert transport.calls[3] == ("PUT", "/task/t1", None, {
-        "id": "t1",
-        "title": "Prepare",
+    assert transport.calls[2] == ("PUT", "/task/status/t1", None, {
         "status": "feature-review",
     })
+    assert transport.calls[3] == ("GET", "/task/t1", None, None)
 
 
 def test_cli_reports_missing_key_without_traceback(capsys, monkeypatch):

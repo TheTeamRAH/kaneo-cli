@@ -7,6 +7,9 @@ Verified against the published OpenAPI document at
   parameter, not a `projectId` property in the request body.
 - Task comment creation is `POST /comment/{taskId}`, with the comment content
   in the request body.
+- Status-only task updates use `PUT /task/status/{taskId}` with a JSON body of
+  `{"status": "..."}`. The generic task update route is reserved for full
+  task-object updates; the CLI reads the task back after either mutation.
 - Workspace discovery was verified against the TeamRAH Kaneo deployment as
   `GET /auth/organization/list`; it returned the real TeamRAH workspace.
 
