@@ -4,6 +4,15 @@ from kaneo_cli.cli import main
 from kaneo_cli.client import ApiClient
 
 
+def test_cli_version_reports_package_version(capsys):
+    try:
+        main(["--version"])
+    except SystemExit as error:
+        assert error.code == 0
+
+    assert capsys.readouterr().out == "kaneo-cli 0.1.0\n"
+
+
 def test_cli_task_update_emits_compact_stable_json(capsys):
     existing = {"id": "t1", "title": "Old", "projectId": "p1"}
     transport = FakeTransport([existing, {}, {"id": "t1", "projectId": "p1", "title": "New"}])
