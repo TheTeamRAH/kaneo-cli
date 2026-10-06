@@ -5,8 +5,9 @@ Verified against the published OpenAPI document at
 
 - Task creation is `POST /task/{projectId}`. The project ID is a path
   parameter, not a `projectId` property in the request body.
-- Task comment creation is `POST /comment/{taskId}`, with the comment content
-  in the request body.
+- Task comment listing is `GET /comment/{taskId}`, returning every comment
+  oldest first with author information. The same route's `POST` operation
+  creates a comment with content in the request body.
 - Status-only task updates use `PUT /task/status/{taskId}` with a JSON body of
   `{"status": "..."}`. The generic task update route is reserved for full
   task-object updates; the CLI reads the task back after either mutation.

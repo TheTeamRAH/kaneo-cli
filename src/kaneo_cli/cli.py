@@ -97,7 +97,9 @@ def _run(args: argparse.Namespace, client: ApiClient) -> Any:
         return client.create_task(args.project_id, _payload(args))
     if args.resource == "task" and args.verb == "update":
         return client.update_task(args.task_id, _payload(args))
-    if args.resource == "comment":
+    if args.resource == "comment" and args.verb == "list":
+        return client.list_task_comments(args.task_id)
+    if args.resource == "comment" and args.verb == "create":
         return client.create_task_comment(args.task_id, args.content)
     raise ApiError("No command selected")
 
@@ -197,6 +199,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     comment = resources.add_parser("comment", help="task comment operations")
     comment_sub = comment.add_subparsers(dest="verb", required=True)
+    comment_list = comment_sub.add_parser("list", help="list comments for a task")
+    comment_list.add_argument("--task-id", required=True)
+    _add_json(comment_list)
     comment_create = comment_sub.add_parser("create", help="add a comment to a task")
     comment_create.add_argument("--task-id", required=True)
     comment_create.add_argument("--content", required=True)

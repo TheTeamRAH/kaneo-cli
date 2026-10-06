@@ -22,6 +22,16 @@ def test_cli_task_update_emits_compact_stable_json(capsys):
     assert capsys.readouterr().out == '{"id":"t1","projectId":"p1","title":"New"}\n'
 
 
+def test_cli_task_comment_list_emits_json(capsys):
+    comments = [{"id": "c1", "content": "Ready", "authorName": "Ada"}]
+    transport = FakeTransport([comments])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert main(["comment", "list", "--task-id", "t1", "--json"], client=client) == 0
+    assert transport.calls == [("GET", "/comment/t1", None, None)]
+    assert capsys.readouterr().out == '[{"authorName":"Ada","content":"Ready","id":"c1"}]\n'
+
+
 def test_cli_task_create_uses_project_path_without_project_body_field(capsys):
     transport = FakeTransport([
         {"id": "t1"},

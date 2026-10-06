@@ -27,10 +27,11 @@ uv run kaneo project list --workspace-id WORKSPACE_ID --json
 uv run kaneo task list --project-id PROJECT_ID --json
 uv run kaneo task create --project-id PROJECT_ID --title "Prepare release" --status todo
 uv run kaneo task update TASK_ID --status feature-review
+uv run kaneo comment list --task-id TASK_ID --json
 uv run kaneo comment create --task-id TASK_ID --content "Ready for review"
 ```
 
-The CLI uses the server's `/api` base, bearer authentication, TLS certificate and hostname verification by default, compact stable JSON with `--json`, and actionable errors on stderr. Task creation sends `POST /task/{projectId}` with the project ID in the path, and comments use `POST /comment/{taskId}`. Use `--status` with a Kaneo status column slug (for example, `feature-review`); it is sent as the API `status` field. A status-only update uses Kaneo's dedicated `PUT /task/status/{taskId}` endpoint with `{"status": "..."}` and reads the task back. Updates with other fields retain the full-object update path, preserve unrelated fields, and read the task back after the update. The existing `--column-id` option remains available and is not remapped.
+The CLI uses the server's `/api` base, bearer authentication, TLS certificate and hostname verification by default, compact stable JSON with `--json`, and actionable errors on stderr. Task creation sends `POST /task/{projectId}` with the project ID in the path, comments use `GET /comment/{taskId}` for read-only listing and `POST /comment/{taskId}` for creation. Use `--status` with a Kaneo status column slug (for example, `feature-review`); it is sent as the API `status` field. A status-only update uses Kaneo's dedicated `PUT /task/status/{taskId}` endpoint with `{"status": "..."}` and reads the task back. Updates with other fields retain the full-object update path, preserve unrelated fields, and read the task back after the update. The existing `--column-id` option remains available and is not remapped.
 
 `workspace list` uses Kaneo's verified `GET /auth/organization/list` endpoint. The `--no-tls-verify` option is an explicit, insecure opt-in for self-hosted deployments whose private certificates are not trusted by the system; do not use it on untrusted networks. See [the API observation](docs/observations/2026-10-05-kaneo-openapi.md).
 
@@ -40,6 +41,7 @@ Kaneo credentials must be supplied through a private environment or secret manag
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-10-06-23-26 | Add read-only task comment listing through the verified GET comment route | [Task comment list](docs/features/2026-10-06-23-26-task-comment-list.md) | whose-footprints-are-these |
 | 2026-10-06-09-00 | Add standard `--version` output for deployment verification | [CLI version option](docs/features/2026-10-06-09-00-cli-version-option.md) | whose-footprints-are-these |
 | 2026-10-05-21-00 | Add explicit task status option for Kaneo task mutations | [Explicit task status option](docs/features/2026-10-05-21-00-task-status-option.md) | whose-footprints-are-these |
 | 2026-10-05-20-30 | Correct workspace discovery and add explicit opt-in TLS bypass | [Workspace endpoint and TLS](docs/features/2026-10-05-20-30-workspace-endpoint-and-tls.md) | whose-footprints-are-these |
