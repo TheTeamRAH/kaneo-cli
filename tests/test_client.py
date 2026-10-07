@@ -115,6 +115,15 @@ def test_create_task_comment_uses_comment_path():
     assert transport.calls == [("POST", "/comment/t1", None, {"content": "Ready"})]
 
 
+def test_list_task_comments_uses_verified_comment_path():
+    response = [{"id": "c1", "content": "Ready", "authorName": "Ada"}]
+    transport = FakeTransport([response])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert client.list_task_comments("t1") == response
+    assert transport.calls == [("GET", "/comment/t1", None, None)]
+
+
 def test_list_tasks_returns_board_response_with_pagination():
     board = {"columns": [{"id": "todo", "tasks": [{"id": "t1"}]}], "pagination": {"page": 1}}
     transport = FakeTransport([board])

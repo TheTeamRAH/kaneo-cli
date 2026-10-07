@@ -335,6 +335,21 @@ class ApiClient:
         self._request("PUT", f"/task/status/{task_id}", payload={"status": status})
         return self.get_task(task_id)
 
+    def list_task_comments(self, task_id: str) -> Any:
+        """Return every comment for a task, oldest first.
+
+        Args:
+            task_id: Kaneo task identifier.
+
+        Returns:
+            The decoded comment list supplied by Kaneo.
+
+        Examples:
+            Input: ``task_id="task-1"``.
+            Output: ``[{"id": "comment-1", "content": "Investigating this."}]``.
+        """
+        return self._request("GET", f"/comment/{task_id}")
+
     def create_task_comment(self, task_id: str, content: str) -> Any:
         """Add a comment to a task.
 
