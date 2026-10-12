@@ -378,14 +378,20 @@ class ApiClient:
         if not isinstance(existing, dict) or not existing.get("projectId"):
             raise ApiError("Kaneo returned no project information for the task")
         board = self.list_tasks(str(existing["projectId"]))
-        columns = list(board.get("columns", [])) if isinstance(board, dict) else []
-        pagination = board.get("pagination", {}) if isinstance(board, dict) else {}
+        board_data = board.get("data", board) if isinstance(board, dict) else {}
+        columns = list(board_data.get("columns", [])) if isinstance(board_data, dict) else []
+        pagination = (
+            board_data.get("pagination", {})
+            if isinstance(board_data, dict)
+            else {}
+        )
         page = 1
         total_pages = pagination.get("totalPages", 1) if isinstance(pagination, dict) else 1
         while page < total_pages:
             page += 1
             next_board = self.list_tasks(str(existing["projectId"]), page=page)
-            next_columns = next_board.get("columns", []) if isinstance(next_board, dict) else []
+            next_data = next_board.get("data", next_board) if isinstance(next_board, dict) else {}
+            next_columns = next_data.get("columns", []) if isinstance(next_data, dict) else []
             if isinstance(next_columns, list):
                 columns.extend(next_columns)
             next_pagination = (
