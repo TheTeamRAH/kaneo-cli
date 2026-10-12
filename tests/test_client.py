@@ -229,6 +229,36 @@ def test_update_task_status_to_top_reads_all_board_pages():
     assert transport.calls[3][1] == "/task/reorder"
 
 
+def test_update_task_status_to_top_merges_columns_across_enveloped_pages():
+    task = {"id": "t1", "projectId": "p1", "status": "todo", "position": 20}
+    first_page = {
+        "data": {
+            "columns": [
+                {"id": "todo", "slug": "todo", "tasks": [task]},
+                {"id": "done", "slug": "done", "tasks": [{"id": "t2", "status": "done", "position": 10}]},
+            ],
+            "pagination": {"page": 1, "totalPages": 2},
+        }
+    }
+    second_page = {
+        "data": {
+            "columns": [
+                {"id": "todo", "slug": "todo", "tasks": [{"id": "t3", "status": "todo", "position": 21}]},
+                {"id": "done", "slug": "done", "tasks": [{"id": "t4", "status": "done", "position": 11}]},
+            ],
+            "pagination": {"page": 2, "totalPages": 2},
+        }
+    }
+    updated = {**task, "status": "done", "position": 0}
+    transport = FakeTransport([task, first_page, second_page, [], updated])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert client.update_task_status("t1", "done", move_to_top=True) == updated
+    reorder = transport.calls[3][3]
+    assert [item["id"] for item in reorder["expectedTasks"]] == ["t1", "t3", "t2", "t4"]
+    assert [item["id"] for item in reorder["tasks"]] == ["t1", "t2", "t4", "t3"]
+
+
 def test_list_tasks_returns_board_response_with_pagination():
     board = {"columns": [{"id": "todo", "tasks": [{"id": "t1"}]}], "pagination": {"page": 1}}
     transport = FakeTransport([board])

@@ -379,7 +379,27 @@ class ApiClient:
             raise ApiError("Kaneo returned no project information for the task")
         board = self.list_tasks(str(existing["projectId"]))
         board_data = board.get("data", board) if isinstance(board, dict) else {}
-        columns = list(board_data.get("columns", [])) if isinstance(board_data, dict) else []
+        columns: list[dict[str, Any]] = []
+        columns_by_key: dict[str, dict[str, Any]] = {}
+
+        def merge_columns(page_columns: Any) -> None:
+            """Merge task pages that repeat the same board columns."""
+            if not isinstance(page_columns, list):
+                return
+            for page_column in page_columns:
+                if not isinstance(page_column, dict):
+                    continue
+                key = str(page_column.get("id") or page_column.get("slug"))
+                current = columns_by_key.get(key)
+                if current is None:
+                    current = {**page_column, "tasks": []}
+                    columns_by_key[key] = current
+                    columns.append(current)
+                page_tasks = page_column.get("tasks", [])
+                if isinstance(page_tasks, list):
+                    current["tasks"].extend(page_tasks)
+
+        merge_columns(board_data.get("columns", []) if isinstance(board_data, dict) else [])
         pagination = (
             board_data.get("pagination", {})
             if isinstance(board_data, dict)
@@ -391,11 +411,11 @@ class ApiClient:
             page += 1
             next_board = self.list_tasks(str(existing["projectId"]), page=page)
             next_data = next_board.get("data", next_board) if isinstance(next_board, dict) else {}
-            next_columns = next_data.get("columns", []) if isinstance(next_data, dict) else []
-            if isinstance(next_columns, list):
-                columns.extend(next_columns)
+            merge_columns(next_data.get("columns", []) if isinstance(next_data, dict) else [])
             next_pagination = (
-                next_board.get("pagination", {}) if isinstance(next_board, dict) else {}
+                next_data.get("pagination", {})
+                if isinstance(next_data, dict)
+                else {}
             )
             if isinstance(next_pagination, dict):
                 total_pages = max(total_pages, next_pagination.get("totalPages", total_pages))
