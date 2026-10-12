@@ -174,6 +174,118 @@ class HttpTransport:
             raise ApiError("Kaneo returned an invalid JSON response") from error
 
 
+def _merge_board_columns(
+    columns: list[dict[str, Any]],
+    columns_by_key: dict[str, dict[str, Any]],
+    page_columns: Any,
+) -> None:
+    """Merge one paginated board response into its accumulated columns.
+
+    Args:
+        columns: Ordered accumulated board columns.
+        columns_by_key: Stable column lookup used to merge repeated columns.
+        page_columns: Column collection from one board page.
+
+    Examples:
+        Input: two pages containing the same ``todo`` column.
+        Output: one ``todo`` column containing tasks from both pages.
+    """
+    if not isinstance(page_columns, list):
+        return
+    for page_column in page_columns:
+        if not isinstance(page_column, dict):
+            continue
+        key = str(page_column.get("id") or page_column.get("slug"))
+        current = columns_by_key.get(key)
+        if current is None:
+            current = {**page_column, "tasks": []}
+            columns_by_key[key] = current
+            columns.append(current)
+        page_tasks = page_column.get("tasks", [])
+        if isinstance(page_tasks, list):
+            current["tasks"].extend(page_tasks)
+
+
+def _reorder_board_tasks(
+    columns: list[dict[str, Any]],
+    task_id: str,
+    source_status: Any,
+    destination_status: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build expected and desired task snapshots for a top-of-column move.
+
+    Args:
+        columns: Complete board columns from the affected pages.
+        task_id: Task being moved.
+        source_status: Task's current status.
+        destination_status: Target column slug.
+
+    Returns:
+        Expected affected tasks and their desired reorder state.
+
+    Raises:
+        ApiError: If the target column or task is absent.
+
+    Examples:
+        Input: task ``t1`` moving from ``todo`` to ``done``.
+        Output: destination task ``t1`` has position zero.
+    """
+    expected_tasks: list[dict[str, Any]] = []
+    desired_by_column: list[tuple[bool, list[dict[str, Any]]]] = []
+    destination_found = False
+    for column in columns:
+        tasks = column.get("tasks", [])
+        if not isinstance(tasks, list) or column.get("slug") not in {
+            source_status,
+            destination_status,
+        }:
+            continue
+        current = [
+            {
+                "id": task["id"],
+                "position": task.get("position", index),
+                "status": task.get("status", column.get("slug")),
+            }
+            for index, task in enumerate(tasks)
+            if isinstance(task, dict) and task.get("id")
+        ]
+        expected_tasks.extend(current)
+        if column.get("slug") == destination_status:
+            destination_found = True
+            remaining = [item for item in current if item["id"] != task_id]
+            desired_by_column.append(
+                (
+                    True,
+                    [{"id": task_id, "position": 0, "status": destination_status}]
+                    + [
+                        {**item, "position": index + 1}
+                        for index, item in enumerate(remaining)
+                    ],
+                )
+            )
+        else:
+            remaining = [item for item in current if item["id"] != task_id]
+            desired_by_column.append(
+                (
+                    False,
+                    [
+                        {**item, "position": index, "status": item["status"]}
+                        for index, item in enumerate(remaining)
+                    ],
+                )
+            )
+    if not destination_found:
+        raise ApiError(
+            f"Kaneo status column {destination_status} was not present in the project board"
+        )
+    if not any(item["id"] == task_id for item in expected_tasks):
+        raise ApiError(f"Kaneo task {task_id} was not present in the project board")
+    desired_tasks: list[dict[str, Any]] = []
+    for _, task_items in sorted(desired_by_column, key=lambda item: not item[0]):
+        desired_tasks.extend(task_items)
+    return expected_tasks, desired_tasks
+
+
 @dataclass
 class ApiClient:
     """Typed operations used by the Kaneo CLI.
@@ -377,29 +489,16 @@ class ApiClient:
         existing = self.get_task(task_id)
         if not isinstance(existing, dict) or not existing.get("projectId"):
             raise ApiError("Kaneo returned no project information for the task")
-        board = self.list_tasks(str(existing["projectId"]))
+        project_id = str(existing["projectId"])
+        board = self.list_tasks(project_id)
         board_data = board.get("data", board) if isinstance(board, dict) else {}
         columns: list[dict[str, Any]] = []
         columns_by_key: dict[str, dict[str, Any]] = {}
-
-        def merge_columns(page_columns: Any) -> None:
-            """Merge task pages that repeat the same board columns."""
-            if not isinstance(page_columns, list):
-                return
-            for page_column in page_columns:
-                if not isinstance(page_column, dict):
-                    continue
-                key = str(page_column.get("id") or page_column.get("slug"))
-                current = columns_by_key.get(key)
-                if current is None:
-                    current = {**page_column, "tasks": []}
-                    columns_by_key[key] = current
-                    columns.append(current)
-                page_tasks = page_column.get("tasks", [])
-                if isinstance(page_tasks, list):
-                    current["tasks"].extend(page_tasks)
-
-        merge_columns(board_data.get("columns", []) if isinstance(board_data, dict) else [])
+        _merge_board_columns(
+            columns,
+            columns_by_key,
+            board_data.get("columns", []) if isinstance(board_data, dict) else [],
+        )
         pagination = (
             board_data.get("pagination", {})
             if isinstance(board_data, dict)
@@ -409,9 +508,13 @@ class ApiClient:
         total_pages = pagination.get("totalPages", 1) if isinstance(pagination, dict) else 1
         while page < total_pages:
             page += 1
-            next_board = self.list_tasks(str(existing["projectId"]), page=page)
+            next_board = self.list_tasks(project_id, page=page)
             next_data = next_board.get("data", next_board) if isinstance(next_board, dict) else {}
-            merge_columns(next_data.get("columns", []) if isinstance(next_data, dict) else [])
+            _merge_board_columns(
+                columns,
+                columns_by_key,
+                next_data.get("columns", []) if isinstance(next_data, dict) else [],
+            )
             next_pagination = (
                 next_data.get("pagination", {})
                 if isinstance(next_data, dict)
@@ -421,59 +524,9 @@ class ApiClient:
                 total_pages = max(total_pages, next_pagination.get("totalPages", total_pages))
         if not columns:
             raise ApiError("Kaneo returned no board columns for reorder")
-        expected_tasks: list[dict[str, Any]] = []
-        desired_by_column: list[tuple[bool, list[dict[str, Any]]]] = []
-        source_status = existing.get("status")
-        destination_found = False
-        for column in columns:
-            tasks = column.get("tasks", []) if isinstance(column, dict) else []
-            if not isinstance(tasks, list):
-                continue
-            current = [
-                {
-                    "id": task["id"],
-                    "position": task.get("position", index),
-                    "status": task.get("status", column.get("slug")),
-                }
-                for index, task in enumerate(tasks)
-                if isinstance(task, dict) and task.get("id")
-            ]
-            if column.get("slug") not in {source_status, status}:
-                continue
-            expected_tasks.extend(current)
-            if column.get("slug") == status:
-                destination_found = True
-                destination = [item for item in current if item["id"] != task_id]
-                desired_by_column.append(
-                    (
-                        True,
-                        [{"id": task_id, "position": 0, "status": status}]
-                        + [
-                            {**item, "position": index + 1}
-                            for index, item in enumerate(destination)
-                        ],
-                    )
-                )
-            else:
-                remaining = [item for item in current if item["id"] != task_id]
-                desired_by_column.append(
-                    (
-                        False,
-                        [
-                            {**item, "position": index, "status": item["status"]}
-                            for index, item in enumerate(remaining)
-                        ],
-                    )
-                )
-        if not destination_found:
-            raise ApiError(f"Kaneo status column {status} was not present in the project board")
-        desired_tasks: list[dict[str, Any]] = []
-        for is_destination, task_items in sorted(
-            desired_by_column, key=lambda item: not item[0]
-        ):
-            desired_tasks.extend(task_items)
-        if not any(item["id"] == task_id for item in expected_tasks):
-            raise ApiError(f"Kaneo task {task_id} was not present in the project board")
+        expected_tasks, desired_tasks = _reorder_board_tasks(
+            columns, task_id, existing.get("status"), status
+        )
         self._request(
             "POST",
             "/task/reorder",
