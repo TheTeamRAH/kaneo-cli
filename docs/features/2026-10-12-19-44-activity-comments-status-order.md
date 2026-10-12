@@ -45,7 +45,7 @@ Extend the CLI with:
 - Preserve activity IDs, task IDs, types, timestamps, users, content, external metadata, and `eventData` without reshaping away provider fields.
 - Normalize literal `\\n` sequences in `comment create --content` to actual newline characters before the API request. Existing actual newline characters remain unchanged.
 - Add an opt-in `--top` flag to `task update --status STATUS`.
-- Implement `--top` using `GET /task/tasks/{projectId}` followed by `POST /task/reorder`, with the complete affected-column snapshot in `expectedTasks`, the target task first in the destination column, and the target status applied atomically.
+- Implement `--top` using `GET /task/tasks/{projectId}` followed by `POST /task/reorder`, with the complete affected-column snapshot in `expectedTasks`, the target task first in the destination column, and the target status applied atomically. If the deployed server lacks the reorder route and returns `400`, `404`, or `405`, fall back to a full `PUT /task/{taskId}` update with `position: 0` while preserving unrelated task fields.
 - Read the task back after a successful reorder, matching existing mutation verification behavior.
 - Report stale reorder conflicts (`409`) as actionable errors and do not retry mutations automatically.
 - Add unit and CLI tests, API observations, feature documentation, README usage, and feature indexes.

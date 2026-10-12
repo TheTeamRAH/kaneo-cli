@@ -209,6 +209,40 @@ def test_update_task_status_to_top_uses_reorder_snapshot_and_reads_back():
     ]
 
 
+def test_update_task_status_to_top_falls_back_to_full_update_for_legacy_server():
+    task = {
+        "id": "t1",
+        "projectId": "p1",
+        "title": "Prepare",
+        "description": "Keep this",
+        "priority": "high",
+        "status": "todo",
+        "position": 20,
+    }
+    board = {"columns": [{"slug": "todo", "tasks": [task]}, {"slug": "done", "tasks": []}]}
+    updated = {**task, "status": "done", "position": 0}
+    transport = FakeTransport(
+        [task, board, ApiError("legacy reorder route", status_code=400), {"ok": True}, updated]
+    )
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert client.update_task_status("t1", "done", move_to_top=True) == updated
+    assert transport.calls[2][1] == "/task/reorder"
+    assert transport.calls[3] == (
+        "PUT",
+        "/task/t1",
+        None,
+        {
+            "title": "Prepare",
+            "description": "Keep this",
+            "priority": "high",
+            "status": "done",
+            "projectId": "p1",
+            "position": 0,
+        },
+    )
+
+
 def test_update_task_status_to_top_reads_all_board_pages():
     task = {"id": "t1", "projectId": "p1", "status": "todo", "position": 20}
     first_page = {

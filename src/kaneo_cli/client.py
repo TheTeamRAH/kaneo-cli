@@ -14,11 +14,18 @@ from urllib.request import Request, urlopen
 class ApiError(RuntimeError):
     """An actionable error returned by or raised while calling Kaneo.
 
+    Args:
+        message: Human-readable error detail.
+        status_code: Optional HTTP status returned by Kaneo.
+
     Examples:
         Input: an HTTP 401 response.
-        Output: ``ApiError("Kaneo returned 401: check KANEO_API_KEY (...)")``.
+        Output: ``ApiError("Kaneo returned 401: check KANEO_API_KEY", 401)``.
     """
 
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 def normalize_comment_content(content: str) -> str:
     """Convert literal ``\\n`` pairs into rendered newlines.
@@ -163,7 +170,10 @@ class HttpTransport:
                 if error.code == 409
                 else "check the request and server"
             )
-            raise ApiError(f"Kaneo returned {error.code}: {hint} ({detail})") from error
+            raise ApiError(
+                f"Kaneo returned {error.code}: {hint} ({detail})",
+                status_code=error.code,
+            ) from error
         except URLError as error:
             raise ApiError(f"Unable to reach Kaneo at {self.base_url}: {error.reason}") from error
         if not raw:
@@ -527,15 +537,35 @@ class ApiClient:
         expected_tasks, desired_tasks = _reorder_board_tasks(
             columns, task_id, existing.get("status"), status
         )
-        self._request(
-            "POST",
-            "/task/reorder",
-            payload={
-                "projectId": existing["projectId"],
-                "tasks": desired_tasks,
-                "expectedTasks": expected_tasks,
-            },
-        )
+        try:
+            self._request(
+                "POST",
+                "/task/reorder",
+                payload={
+                    "projectId": existing["projectId"],
+                    "tasks": desired_tasks,
+                    "expectedTasks": expected_tasks,
+                },
+            )
+        except ApiError as error:
+            if error.status_code not in {400, 404, 405}:
+                raise
+            fallback = {
+                key: existing[key]
+                for key in ("title", "description", "priority")
+                if key in existing
+            }
+            fallback.update(
+                {
+                    "status": status,
+                    "projectId": existing["projectId"],
+                    "position": 0,
+                }
+            )
+            for key in ("startDate", "dueDate", "userId"):
+                if existing.get(key) is not None:
+                    fallback[key] = existing[key]
+            self._request("PUT", f"/task/{task_id}", payload=fallback)
         return self.get_task(task_id)
 
     def list_task_comments(self, task_id: str) -> Any:
