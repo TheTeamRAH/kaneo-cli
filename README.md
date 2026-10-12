@@ -27,11 +27,13 @@ uv run kaneo project list --workspace-id WORKSPACE_ID --json
 uv run kaneo task list --project-id PROJECT_ID --json
 uv run kaneo task create --project-id PROJECT_ID --title "Prepare release" --status todo
 uv run kaneo task update TASK_ID --status feature-review
+uv run kaneo task update TASK_ID --status feature-review --top
 uv run kaneo comment list --task-id TASK_ID --json
-uv run kaneo comment create --task-id TASK_ID --content "Ready for review"
+uv run kaneo comment create --task-id TASK_ID --content "First line\\nSecond line"
+uv run kaneo activity list --task-id TASK_ID --json
 ```
 
-The CLI uses the server's `/api` base, bearer authentication, TLS certificate and hostname verification by default, compact stable JSON with `--json`, and actionable errors on stderr. Task creation sends `POST /task/{projectId}` with the project ID in the path, comments use `GET /comment/{taskId}` for read-only listing and `POST /comment/{taskId}` for creation. Use `--status` with a Kaneo status column slug (for example, `feature-review`); it is sent as the API `status` field. A status-only update uses Kaneo's dedicated `PUT /task/status/{taskId}` endpoint with `{"status": "..."}` and reads the task back. Updates with other fields retain the full-object update path, preserve unrelated fields, and read the task back after the update. The existing `--column-id` option remains available and is not remapped.
+The CLI uses the server's `/api` base, bearer authentication, TLS certificate and hostname verification by default, compact stable JSON with `--json`, and actionable errors on stderr. Task creation sends `POST /task/{projectId}` with the project ID in the path, comments use `GET /comment/{taskId}` for read-only listing and `POST /comment/{taskId}` for creation. Literal `\\n` sequences in new comment content are converted to rendered newlines. Use `--status` with a Kaneo status column slug (for example, `feature-review`); it is sent as the API `status` field. A status-only update uses Kaneo's dedicated `PUT /task/status/{taskId}` endpoint with `{"status": "..."}` and reads the task back. Add `--top` to a status update to use Kaneo's optimistic-concurrency reorder endpoint and place the task first in the destination column. Updates with other fields retain the full-object update path, preserve unrelated fields, and read the task back after the update. `activity list` reads the per-task activity feed; omit `--limit` for the full feed or use a value from 1 through 100. The existing `--column-id` option remains available and is not remapped.
 
 `workspace list` uses Kaneo's verified `GET /auth/organization/list` endpoint. The `--no-tls-verify` option is an explicit, insecure opt-in for self-hosted deployments whose private certificates are not trusted by the system; do not use it on untrusted networks. See [the API observation](docs/observations/2026-10-05-kaneo-openapi.md).
 
@@ -41,6 +43,7 @@ Kaneo credentials must be supplied through a private environment or secret manag
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-10-12-19-44 | Add task activity retrieval, newline-safe comments, and opt-in top-of-column status updates | [Activity, comments, and status order](docs/features/2026-10-12-19-44-activity-comments-status-order.md) | whose-footprints-are-these |
 | 2026-10-06-23-26 | Add read-only task comment listing through the verified GET comment route | [Task comment list](docs/features/2026-10-06-23-26-task-comment-list.md) | whose-footprints-are-these |
 | 2026-10-06-09-00 | Add standard `--version` output for deployment verification | [CLI version option](docs/features/2026-10-06-09-00-cli-version-option.md) | whose-footprints-are-these |
 | 2026-10-05-21-00 | Add explicit task status option for Kaneo task mutations | [Explicit task status option](docs/features/2026-10-05-21-00-task-status-option.md) | whose-footprints-are-these |

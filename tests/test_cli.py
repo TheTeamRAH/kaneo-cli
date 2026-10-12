@@ -32,6 +32,66 @@ def test_cli_task_comment_list_emits_json(capsys):
     assert capsys.readouterr().out == '[{"authorName":"Ada","content":"Ready","id":"c1"}]\n'
 
 
+def test_cli_activity_list_emits_json_and_passes_limit(capsys):
+    activity = [{"id": "a1", "type": "status_changed", "eventData": {"oldStatus": "todo", "newStatus": "done"}}]
+    transport = FakeTransport([activity])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert main(["activity", "list", "--task-id", "t1", "--limit", "10", "--json"], client=client) == 0
+    assert transport.calls == [("GET", "/activity/t1", {"limit": 10}, None)]
+    assert capsys.readouterr().out == '[{"eventData":{"newStatus":"done","oldStatus":"todo"},"id":"a1","type":"status_changed"}]\n'
+
+
+def test_cli_comment_create_decodes_literal_newlines(capsys):
+    transport = FakeTransport([{"id": "c1", "content": "First\nSecond"}])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert main(["comment", "create", "--task-id", "t1", "--content", r"First\nSecond", "--json"], client=client) == 0
+    assert transport.calls == [("POST", "/comment/t1", None, {"content": "First\nSecond"})]
+    assert capsys.readouterr().out == '{"content":"First\\nSecond","id":"c1"}\n'
+
+
+def test_cli_rejects_top_without_status(capsys):
+    transport = FakeTransport([])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    try:
+        main(["task", "update", "t1", "--top"], client=client)
+    except SystemExit as error:
+        assert error.code == 2
+    else:
+        raise AssertionError("expected parser rejection")
+    assert transport.calls == []
+
+
+def test_cli_rejects_top_with_other_task_fields(capsys):
+    transport = FakeTransport([])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    try:
+        main(
+            ["task", "update", "t1", "--status", "done", "--top", "--title", "Changed"],
+            client=client,
+        )
+    except SystemExit as error:
+        assert error.code == 2
+    else:
+        raise AssertionError("expected parser rejection")
+    assert transport.calls == []
+
+
+def test_cli_status_top_reads_back_task(capsys):
+    task = {"id": "t1", "projectId": "p1", "status": "todo", "position": 20}
+    board = {"columns": [{"slug": "todo", "tasks": [task]}, {"slug": "done", "tasks": []}]}
+    updated = {**task, "status": "done", "position": 0}
+    transport = FakeTransport([task, board, [], updated])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert main(["task", "update", "t1", "--status", "done", "--top", "--json"], client=client) == 0
+    assert transport.calls[2][0:2] == ("POST", "/task/reorder")
+    assert capsys.readouterr().out == '{"id":"t1","position":0,"projectId":"p1","status":"done"}\n'
+
+
 def test_cli_task_create_uses_project_path_without_project_body_field(capsys):
     transport = FakeTransport([
         {"id": "t1"},
