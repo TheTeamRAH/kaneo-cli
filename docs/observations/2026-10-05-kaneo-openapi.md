@@ -13,6 +13,13 @@ Verified against the published OpenAPI document at
   task-object updates; the CLI reads the task back after either mutation.
 - Workspace discovery was verified against the TeamRAH Kaneo deployment as
   `GET /auth/organization/list`; it returned the real TeamRAH workspace.
+- The published activity API provides `GET /activity/{taskId}` for a full task
+  feed or a bounded `limit` from 1 through 100. Status changes are returned as
+  `status_changed` records with `createdAt` and `eventData.oldStatus`/
+  `eventData.newStatus`.
+- The published reorder API provides `POST /task/reorder` with `projectId`,
+  desired `tasks`, and `expectedTasks`; stale snapshots return `409`. This is
+  the API contract used by the CLI's opt-in move-to-top status update.
 
 The CLI's `workspace list` calls `GET /auth/organization/list`. The published
 OpenAPI document includes `GET /user/me`, but it does not describe this

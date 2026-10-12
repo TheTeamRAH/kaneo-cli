@@ -96,11 +96,15 @@ def _run(args: argparse.Namespace, client: ApiClient) -> Any:
     if args.resource == "task" and args.verb == "create":
         return client.create_task(args.project_id, _payload(args))
     if args.resource == "task" and args.verb == "update":
+        if args.top:
+            return client.update_task_status(args.task_id, args.status, move_to_top=True)
         return client.update_task(args.task_id, _payload(args))
     if args.resource == "comment" and args.verb == "list":
         return client.list_task_comments(args.task_id)
     if args.resource == "comment" and args.verb == "create":
         return client.create_task_comment(args.task_id, args.content)
+    if args.resource == "activity" and args.verb == "list":
+        return client.list_task_activity(args.task_id, args.limit)
     raise ApiError("No command selected")
 
 
@@ -195,6 +199,9 @@ def build_parser() -> argparse.ArgumentParser:
     task_update = task_sub.add_parser("update", help="update a task")
     task_update.add_argument("task_id")
     _add_task_fields(task_update)
+    task_update.add_argument(
+        "--top", action="store_true", help="move a status update to the top of its column"
+    )
     _add_json(task_update)
 
     comment = resources.add_parser("comment", help="task comment operations")
@@ -206,6 +213,15 @@ def build_parser() -> argparse.ArgumentParser:
     comment_create.add_argument("--task-id", required=True)
     comment_create.add_argument("--content", required=True)
     _add_json(comment_create)
+
+    activity = resources.add_parser("activity", help="task activity operations")
+    activity_sub = activity.add_subparsers(dest="verb", required=True)
+    activity_list = activity_sub.add_parser("list", help="list activity for a task")
+    activity_list.add_argument("--task-id", required=True)
+    activity_list.add_argument(
+        "--limit", type=int, help="maximum recent activities to return (1-100)"
+    )
+    _add_json(activity_list)
     return parser
 
 
@@ -225,6 +241,18 @@ def main(argv: list[str] | None = None, client: ApiClient | None = None) -> int:
     """
     parser = build_parser()
     args = parser.parse_args(argv)
+    if getattr(args, "top", False):
+        if not args.status:
+            parser.error("--top requires --status")
+        unsupported = {
+            "title": args.title,
+            "description": args.description,
+            "column-id": args.column_id,
+            "priority": args.priority,
+            "due-date": args.due_date,
+        }
+        if any(value is not None for value in unsupported.values()):
+            parser.error("--top cannot be combined with task fields other than --status")
     try:
         result = _run(
             args,

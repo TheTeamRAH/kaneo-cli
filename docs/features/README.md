@@ -6,6 +6,7 @@ type: Feature Index
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-10-12-19-44 | Add task activity retrieval, newline-safe comments, and opt-in top-of-column status updates. | [Activity, comments, and status order](./2026-10-12-19-44-activity-comments-status-order.md) | whose-footprints-are-these |
 | 2026-10-06-23-26 | Add read-only task comment listing through the verified GET comment route. | [Task comment list](./2026-10-06-23-26-task-comment-list.md) | whose-footprints-are-these |
 | 2026-10-06-09-00 | Add standard `--version` output for deployment verification. | [CLI version option](./2026-10-06-09-00-cli-version-option.md) | whose-footprints-are-these |
 | 2026-10-05-21-00 | Add explicit task status option for Kaneo task mutations. | [Explicit task status option](./2026-10-05-21-00-task-status-option.md) | whose-footprints-are-these |

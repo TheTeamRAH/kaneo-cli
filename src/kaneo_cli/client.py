@@ -20,6 +20,22 @@ class ApiError(RuntimeError):
     """
 
 
+def normalize_comment_content(content: str) -> str:
+    """Convert literal ``\\n`` pairs into rendered newlines.
+
+    Args:
+        content: Comment text supplied by the CLI.
+
+    Returns:
+        Comment text with literal backslash-n pairs replaced by newlines.
+
+    Examples:
+        Input: ``"First\\nSecond"``.
+        Output: text with a real newline between ``First`` and ``Second``.
+    """
+    return content.replace("\\n", "\n")
+
+
 class Transport(Protocol):
     """Protocol implemented by HTTP and test transports.
 
@@ -143,6 +159,8 @@ class HttpTransport:
             hint = (
                 "check KANEO_API_KEY"
                 if error.code in (401, 403)
+                else "refresh the board and retry deliberately"
+                if error.code == 409
                 else "check the request and server"
             )
             raise ApiError(f"Kaneo returned {error.code}: {hint} ({detail})") from error
@@ -318,12 +336,14 @@ class ApiClient:
         self._request("PUT", f"/task/{task_id}", payload=payload)
         return self.get_task(task_id)
 
-    def update_task_status(self, task_id: str, status: Any) -> Any:
+    def update_task_status(self, task_id: str, status: Any, *, move_to_top: bool = False) -> Any:
         """Set a task's status through Kaneo's dedicated endpoint.
 
         Args:
             task_id: Kaneo task identifier.
             status: Status column slug accepted by the server.
+            move_to_top: Whether to atomically move the task to the top of the
+                destination column.
 
         Returns:
             The task read back after the status mutation.
@@ -332,7 +352,111 @@ class ApiClient:
             Input: ``task_id="task-1", status="done"``.
             Output: ``{"id": "task-1", "status": "done"}``.
         """
+        if move_to_top:
+            return self._move_task_to_top(task_id, status)
         self._request("PUT", f"/task/status/{task_id}", payload={"status": status})
+        return self.get_task(task_id)
+
+    def _move_task_to_top(self, task_id: str, status: str) -> Any:
+        """Move a task to the destination column's top with a board snapshot.
+
+        Args:
+            task_id: Kaneo task identifier.
+            status: Destination column slug.
+
+        Returns:
+            The task read back after the reorder mutation.
+
+        Raises:
+            ApiError: If the task or board response is incomplete.
+
+        Examples:
+            Input: ``task_id="task-1", status="done"`` and a board snapshot.
+            Output: ``{"id": "task-1", "status": "done", "position": 0}``.
+        """
+        existing = self.get_task(task_id)
+        if not isinstance(existing, dict) or not existing.get("projectId"):
+            raise ApiError("Kaneo returned no project information for the task")
+        board = self.list_tasks(str(existing["projectId"]))
+        columns = list(board.get("columns", [])) if isinstance(board, dict) else []
+        pagination = board.get("pagination", {}) if isinstance(board, dict) else {}
+        page = 1
+        total_pages = pagination.get("totalPages", 1) if isinstance(pagination, dict) else 1
+        while page < total_pages:
+            page += 1
+            next_board = self.list_tasks(str(existing["projectId"]), page=page)
+            next_columns = next_board.get("columns", []) if isinstance(next_board, dict) else []
+            if isinstance(next_columns, list):
+                columns.extend(next_columns)
+            next_pagination = (
+                next_board.get("pagination", {}) if isinstance(next_board, dict) else {}
+            )
+            if isinstance(next_pagination, dict):
+                total_pages = max(total_pages, next_pagination.get("totalPages", total_pages))
+        if not columns:
+            raise ApiError("Kaneo returned no board columns for reorder")
+        expected_tasks: list[dict[str, Any]] = []
+        desired_by_column: list[tuple[bool, list[dict[str, Any]]]] = []
+        source_status = existing.get("status")
+        destination_found = False
+        for column in columns:
+            tasks = column.get("tasks", []) if isinstance(column, dict) else []
+            if not isinstance(tasks, list):
+                continue
+            current = [
+                {
+                    "id": task["id"],
+                    "position": task.get("position", index),
+                    "status": task.get("status", column.get("slug")),
+                }
+                for index, task in enumerate(tasks)
+                if isinstance(task, dict) and task.get("id")
+            ]
+            if column.get("slug") not in {source_status, status}:
+                continue
+            expected_tasks.extend(current)
+            if column.get("slug") == status:
+                destination_found = True
+                destination = [item for item in current if item["id"] != task_id]
+                desired_by_column.append(
+                    (
+                        True,
+                        [{"id": task_id, "position": 0, "status": status}]
+                        + [
+                            {**item, "position": index + 1}
+                            for index, item in enumerate(destination)
+                        ],
+                    )
+                )
+            else:
+                remaining = [item for item in current if item["id"] != task_id]
+                desired_by_column.append(
+                    (
+                        False,
+                        [
+                            {**item, "position": index, "status": item["status"]}
+                            for index, item in enumerate(remaining)
+                        ],
+                    )
+                )
+        if not destination_found:
+            raise ApiError(f"Kaneo status column {status} was not present in the project board")
+        desired_tasks: list[dict[str, Any]] = []
+        for is_destination, task_items in sorted(
+            desired_by_column, key=lambda item: not item[0]
+        ):
+            desired_tasks.extend(task_items)
+        if not any(item["id"] == task_id for item in expected_tasks):
+            raise ApiError(f"Kaneo task {task_id} was not present in the project board")
+        self._request(
+            "POST",
+            "/task/reorder",
+            payload={
+                "projectId": existing["projectId"],
+                "tasks": desired_tasks,
+                "expectedTasks": expected_tasks,
+            },
+        )
         return self.get_task(task_id)
 
     def list_task_comments(self, task_id: str) -> Any:
@@ -350,6 +474,25 @@ class ApiClient:
         """
         return self._request("GET", f"/comment/{task_id}")
 
+    def list_task_activity(self, task_id: str, limit: int | None = None) -> Any:
+        """Return task activity, optionally bounded by a recent-item limit.
+
+        Args:
+            task_id: Kaneo task identifier.
+            limit: Optional API limit from 1 through 100.
+
+        Returns:
+            The decoded activity list supplied by Kaneo.
+
+        Examples:
+            Input: ``task_id="task-1", limit=10``.
+            Output: ``[{"id": "activity-1", "type": "status_changed"}]``.
+        """
+        if limit is not None and not 1 <= limit <= 100:
+            raise ApiError("activity limit must be between 1 and 100")
+        params = {"limit": limit} if limit is not None else None
+        return self._request("GET", f"/activity/{task_id}", params=params)
+
     def create_task_comment(self, task_id: str, content: str) -> Any:
         """Add a comment to a task.
 
@@ -364,7 +507,9 @@ class ApiClient:
             Input: ``task_id="task-1", content="Investigating this."``.
             Output: ``{"id": "comment-1", "content": "Investigating this."}``.
         """
-        return self._request("POST", f"/comment/{task_id}", payload={"content": content})
+        return self._request(
+            "POST", f"/comment/{task_id}", payload={"content": normalize_comment_content(content)}
+        )
 
 
 def client_from_environment(*, verify_tls: bool = True) -> ApiClient:

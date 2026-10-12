@@ -1,7 +1,8 @@
 import ssl
+from urllib.error import HTTPError
 
 import kaneo_cli.client as client_module
-from kaneo_cli.client import ApiClient, ApiError, HttpTransport
+from kaneo_cli.client import ApiClient, ApiError, HttpTransport, normalize_comment_content
 
 
 class FakeTransport:
@@ -79,6 +80,20 @@ def test_http_transport_can_explicitly_disable_tls_verification(monkeypatch):
     assert calls[0][2].check_hostname is False
 
 
+def test_http_transport_makes_reorder_conflict_actionable(monkeypatch):
+    def fake_urlopen(*_args, **_kwargs):
+        raise HTTPError("https://kaneo.example/api/task/reorder", 409, "Conflict", {}, None)
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    try:
+        HttpTransport("https://kaneo.example/api", "secret").request("POST", "/task/reorder")
+    except ApiError as error:
+        assert "refresh the board and retry deliberately" in str(error)
+    else:
+        raise AssertionError("expected ApiError")
+
+
 def test_api_client_passes_tls_setting_to_http_transport(monkeypatch):
     transports = []
 
@@ -122,6 +137,96 @@ def test_list_task_comments_uses_verified_comment_path():
 
     assert client.list_task_comments("t1") == response
     assert transport.calls == [("GET", "/comment/t1", None, None)]
+
+
+def test_list_task_activity_supports_full_and_bounded_feeds():
+    activity = [{"id": "a1", "type": "status_changed", "eventData": {"oldStatus": "todo", "newStatus": "done"}}]
+    transport = FakeTransport([activity, activity])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert client.list_task_activity("t1") == activity
+    assert client.list_task_activity("t1", limit=10) == activity
+    assert transport.calls == [
+        ("GET", "/activity/t1", None, None),
+        ("GET", "/activity/t1", {"limit": 10}, None),
+    ]
+
+
+def test_list_task_activity_rejects_invalid_limit_before_request():
+    transport = FakeTransport([])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    try:
+        client.list_task_activity("t1", limit=101)
+    except ApiError as error:
+        assert str(error) == "activity limit must be between 1 and 100"
+    else:
+        raise AssertionError("expected ApiError")
+    assert transport.calls == []
+
+
+def test_normalize_comment_content_only_decodes_literal_newline_pairs():
+    assert normalize_comment_content(r"One\nTwo\nThree") == "One\nTwo\nThree"
+    assert normalize_comment_content("One\nTwo") == "One\nTwo"
+    assert normalize_comment_content(r"Path\\nname") == "Path\\\nname"
+
+
+def test_update_task_status_to_top_uses_reorder_snapshot_and_reads_back():
+    task = {"id": "t1", "projectId": "p1", "status": "todo", "position": 20}
+    board = {
+        "columns": [
+            {"slug": "todo", "tasks": [task, {"id": "t2", "status": "todo", "position": 30}]},
+            {"slug": "done", "tasks": [{"id": "t3", "status": "done", "position": 10}]},
+        ]
+    }
+    updated = {**task, "status": "done", "position": 0}
+    transport = FakeTransport([task, board, [{"id": "t1", "position": 0, "status": "done"}], updated])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert client.update_task_status("t1", "done", move_to_top=True) == updated
+    assert transport.calls == [
+        ("GET", "/task/t1", None, None),
+        ("GET", "/task/tasks/p1", {"page": 1, "limit": 50}, None),
+        (
+            "POST",
+            "/task/reorder",
+            None,
+            {
+                "projectId": "p1",
+                "tasks": [
+                    {"id": "t1", "position": 0, "status": "done"},
+                    {"id": "t3", "position": 1, "status": "done"},
+                    {"id": "t2", "position": 0, "status": "todo"},
+                ],
+                "expectedTasks": [
+                    {"id": "t1", "position": 20, "status": "todo"},
+                    {"id": "t2", "position": 30, "status": "todo"},
+                    {"id": "t3", "position": 10, "status": "done"},
+                ],
+            },
+        ),
+        ("GET", "/task/t1", None, None),
+    ]
+
+
+def test_update_task_status_to_top_reads_all_board_pages():
+    task = {"id": "t1", "projectId": "p1", "status": "todo", "position": 20}
+    first_page = {
+        "columns": [{"slug": "todo", "tasks": [task]}],
+        "pagination": {"page": 1, "totalPages": 2},
+    }
+    second_page = {
+        "columns": [{"slug": "done", "tasks": [{"id": "t2", "status": "done", "position": 10}]}],
+        "pagination": {"page": 2, "totalPages": 2},
+    }
+    updated = {**task, "status": "done", "position": 0}
+    transport = FakeTransport([task, first_page, second_page, [], updated])
+    client = ApiClient("https://kaneo.example/api", "secret", transport=transport)
+
+    assert client.update_task_status("t1", "done", move_to_top=True) == updated
+    assert transport.calls[1] == ("GET", "/task/tasks/p1", {"page": 1, "limit": 50}, None)
+    assert transport.calls[2] == ("GET", "/task/tasks/p1", {"page": 2, "limit": 50}, None)
+    assert transport.calls[3][1] == "/task/reorder"
 
 
 def test_list_tasks_returns_board_response_with_pagination():
