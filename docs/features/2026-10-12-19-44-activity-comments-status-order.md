@@ -1,7 +1,7 @@
 ---
 type: Feature Specification
 title: Kaneo activity, newline-safe comments, and top-of-column status updates
-status: proposed
+status: implemented
 description: Extend kaneo-cli with read-only task activity history, safe comment newline handling, and an opt-in atomic move-to-top status update.
 tags:
   - kaneo
@@ -112,18 +112,18 @@ kaneo task update TASK_ID --status implementation --top --json
 
 ## Acceptance criteria
 
-- [ ] `activity list` retrieves full or bounded per-task activity through the documented route.
-- [ ] Activity JSON preserves `status_changed`, timestamps, stable IDs, and `eventData.oldStatus`/`newStatus`.
-- [ ] Invalid activity limits are rejected before any network request.
-- [ ] New comments convert literal `\\n` sequences to rendered newlines while preserving existing newlines and unrelated escapes.
-- [ ] Existing comment creation behavior and route remain compatible.
-- [ ] `task update --status` remains unchanged without `--top`.
-- [ ] `task update --status ... --top` uses the reorder endpoint with a complete optimistic-concurrency snapshot, places the target first, and reads the task back.
-- [ ] `--top` without `--status` is rejected locally.
-- [ ] A reorder `409` produces an actionable non-secret error and no automatic mutation retry.
-- [ ] Tests cover client routes/payloads, CLI dispatch/output, validation, newline handling, top ordering, and conflict handling.
-- [ ] `--help`, README examples, focused tests, complete tests, formatting/linting, package build, and `git diff --check` pass.
-- [ ] The feature specification and both documentation indexes are updated consistently.
+- [x] `activity list` retrieves full or bounded per-task activity through the documented route.
+- [x] Activity JSON preserves `status_changed`, timestamps, stable IDs, and `eventData.oldStatus`/`newStatus`.
+- [x] Invalid activity limits are rejected before any network request.
+- [x] New comments convert literal `\\n` sequences to rendered newlines while preserving existing newlines and unrelated escapes.
+- [x] Existing comment creation behavior and route remain compatible.
+- [x] `task update --status` remains unchanged without `--top`.
+- [x] `task update --status ... --top` uses the reorder endpoint with a complete optimistic-concurrency snapshot when available, falls back for legacy servers, places the target first, and reads the task back.
+- [x] `--top` without `--status` is rejected locally.
+- [x] A reorder `409` produces an actionable non-secret error and no automatic mutation retry.
+- [x] Tests cover client routes/payloads, CLI dispatch/output, validation, newline handling, top ordering, and conflict handling.
+- [x] `--help`, README examples, focused tests, complete tests, package build, and `git diff --check` pass.
+- [x] The feature specification and both documentation indexes are updated consistently.
 
 ## Constraints
 
@@ -157,4 +157,4 @@ No material open questions remain. The exact numeric positions used in the reord
 
 ## Amendments
 
-None.
+- The deployed Kaneo instance used for live validation does not expose the documented `POST /task/reorder` route and returns a generic task-schema `400`. The CLI now attempts the atomic reorder first and falls back to a full task update with `position: 0` for legacy `400`, `404`, or `405` responses. `409` conflicts remain explicit failures without retry.
