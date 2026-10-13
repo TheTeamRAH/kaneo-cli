@@ -10,7 +10,7 @@ def test_cli_version_reports_package_version(capsys):
     except SystemExit as error:
         assert error.code == 0
 
-    assert capsys.readouterr().out == "kaneo-cli 0.3.0\n"
+    assert capsys.readouterr().out == "kaneo-cli 0.4.0\n"
 
 
 def test_cli_task_update_emits_compact_stable_json(capsys):
