@@ -87,6 +87,7 @@ class HttpTransport:
         verify_tls: Whether to verify TLS certificates and hostnames.
         ca_cert: Optional PEM CA certificate or bundle path to add to the
             platform's default trust store.
+        strict_tls: Whether to enforce strict X.509 certificate validation.
 
     Examples:
         Input: ``HttpTransport("https://kaneo.example/api", "token")``.
@@ -100,6 +101,7 @@ class HttpTransport:
         timeout: float = 30.0,
         verify_tls: bool = True,
         ca_cert: str | None = None,
+        strict_tls: bool = True,
     ) -> None:
         """Initialize transport settings and its TLS context.
 
@@ -110,6 +112,7 @@ class HttpTransport:
             verify_tls: Whether to verify TLS certificates and hostnames.
             ca_cert: Optional PEM CA certificate or bundle path to add to the
                 platform's default trust store.
+            strict_tls: Whether to enforce strict X.509 certificate validation.
 
         Examples:
             Input: ``base_url="http://localhost:1337/api"`` and ``timeout=10``.
@@ -120,6 +123,10 @@ class HttpTransport:
         self.timeout = timeout
         self.verify_tls = verify_tls
         self.ssl_context = ssl.create_default_context()
+        if strict_tls:
+            self.ssl_context.verify_flags |= ssl.VERIFY_X509_STRICT
+        else:
+            self.ssl_context.verify_flags &= ~ssl.VERIFY_X509_STRICT
         if ca_cert:
             self.ssl_context.load_verify_locations(cafile=ca_cert)
         if not verify_tls:
@@ -318,6 +325,7 @@ class ApiClient:
         verify_tls: Whether the default transport verifies TLS.
         ca_cert: Optional PEM CA certificate or bundle path to add to the
             default transport's trust store.
+        strict_tls: Whether to enforce strict X.509 certificate validation.
 
     Examples:
         Input: ``ApiClient("http://localhost:1337", "token")``.
@@ -329,6 +337,7 @@ class ApiClient:
     transport: Transport | None = None
     verify_tls: bool = True
     ca_cert: str | None = None
+    strict_tls: bool = True
 
     def __post_init__(self) -> None:
         """Normalize the API URL and create the default transport if needed.
@@ -346,6 +355,7 @@ class ApiClient:
                 self.api_key,
                 verify_tls=self.verify_tls,
                 ca_cert=self.ca_cert,
+                strict_tls=self.strict_tls,
             )
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
@@ -640,13 +650,30 @@ class ApiClient:
         )
 
 
-def client_from_environment(*, verify_tls: bool = True, ca_cert: str | None = None) -> ApiClient:
+def _environment_bool(name: str, default: bool) -> bool:
+    """Read a strict true/false environment setting."""
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ApiError(f"{name} must be a boolean value")
+
+
+def client_from_environment(
+    *, verify_tls: bool = True, ca_cert: str | None = None, strict_tls: bool | None = None
+) -> ApiClient:
     """Construct a client from environment settings.
 
     Args:
         verify_tls: Whether to verify the server certificate and hostname.
         ca_cert: Optional PEM CA certificate or bundle path. If omitted, the
             ``KANEO_CA_CERT`` environment variable is used when set.
+        strict_tls: Whether to enforce strict X.509 validation. If omitted,
+            ``KANEO_TLS_STRICT`` is used and defaults to ``True``.
 
     Returns:
         A client configured from ``KANEO_API_URL``, ``KANEO_API_KEY``, and the
@@ -667,4 +694,9 @@ def client_from_environment(*, verify_tls: bool = True, ca_cert: str | None = No
         key,
         verify_tls=verify_tls,
         ca_cert=ca_cert if ca_cert is not None else os.getenv("KANEO_CA_CERT"),
+        strict_tls=(
+            strict_tls
+            if strict_tls is not None
+            else _environment_bool("KANEO_TLS_STRICT", True)
+        ),
     )

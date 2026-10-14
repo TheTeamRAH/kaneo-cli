@@ -27,6 +27,11 @@ platform's normal default trust roots and certificate/hostname verification.
   `load_verify_locations(cafile=ca_cert)` adds the supplied trust material.
 - `verify_tls=False` remains an explicit override that disables certificate and
   hostname verification, whether or not `ca_cert` is supplied.
+- `HttpTransport` and `ApiClient` accept `strict_tls`, defaulting to `True`.
+  Setting it to `False` removes only `ssl.VERIFY_X509_STRICT`; CA-chain and
+  hostname verification remain enabled.
+- `client_from_environment` reads `KANEO_TLS_STRICT` when `strict_tls` is not
+  passed explicitly. It defaults to `True` and accepts standard boolean values.
 - No CLI-specific CA flag is added; the environment constructor is the stable
   deployment interface and direct library callers can pass `ca_cert` explicitly.
 
