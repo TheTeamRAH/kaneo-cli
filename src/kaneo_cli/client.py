@@ -85,6 +85,9 @@ class HttpTransport:
         api_key: Bearer token used for authentication.
         timeout: Request timeout in seconds.
         verify_tls: Whether to verify TLS certificates and hostnames.
+        ca_cert: Optional PEM CA certificate or bundle path to add to the
+            platform's default trust store.
+        strict_tls: Whether to enforce strict X.509 certificate validation.
 
     Examples:
         Input: ``HttpTransport("https://kaneo.example/api", "token")``.
@@ -92,7 +95,13 @@ class HttpTransport:
     """
 
     def __init__(
-        self, base_url: str, api_key: str, timeout: float = 30.0, verify_tls: bool = True
+        self,
+        base_url: str,
+        api_key: str,
+        timeout: float = 30.0,
+        verify_tls: bool = True,
+        ca_cert: str | None = None,
+        strict_tls: bool = True,
     ) -> None:
         """Initialize transport settings and its TLS context.
 
@@ -101,6 +110,9 @@ class HttpTransport:
             api_key: Bearer token used for authentication.
             timeout: Request timeout in seconds.
             verify_tls: Whether to verify TLS certificates and hostnames.
+            ca_cert: Optional PEM CA certificate or bundle path to add to the
+                platform's default trust store.
+            strict_tls: Whether to enforce strict X.509 certificate validation.
 
         Examples:
             Input: ``base_url="http://localhost:1337/api"`` and ``timeout=10``.
@@ -111,6 +123,12 @@ class HttpTransport:
         self.timeout = timeout
         self.verify_tls = verify_tls
         self.ssl_context = ssl.create_default_context()
+        if strict_tls:
+            self.ssl_context.verify_flags |= ssl.VERIFY_X509_STRICT
+        else:
+            self.ssl_context.verify_flags &= ~ssl.VERIFY_X509_STRICT
+        if ca_cert:
+            self.ssl_context.load_verify_locations(cafile=ca_cert)
         if not verify_tls:
             self.ssl_context.check_hostname = False
             self.ssl_context.verify_mode = ssl.CERT_NONE
@@ -305,6 +323,9 @@ class ApiClient:
         api_key: Bearer token used to authenticate requests.
         transport: Optional transport replacement for tests or embedding.
         verify_tls: Whether the default transport verifies TLS.
+        ca_cert: Optional PEM CA certificate or bundle path to add to the
+            default transport's trust store.
+        strict_tls: Whether to enforce strict X.509 certificate validation.
 
     Examples:
         Input: ``ApiClient("http://localhost:1337", "token")``.
@@ -315,6 +336,8 @@ class ApiClient:
     api_key: str
     transport: Transport | None = None
     verify_tls: bool = True
+    ca_cert: str | None = None
+    strict_tls: bool = True
 
     def __post_init__(self) -> None:
         """Normalize the API URL and create the default transport if needed.
@@ -327,7 +350,13 @@ class ApiClient:
         if not self.base_url.endswith("/api"):
             self.base_url += "/api"
         if self.transport is None:
-            self.transport = HttpTransport(self.base_url, self.api_key, verify_tls=self.verify_tls)
+            self.transport = HttpTransport(
+                self.base_url,
+                self.api_key,
+                verify_tls=self.verify_tls,
+                ca_cert=self.ca_cert,
+                strict_tls=self.strict_tls,
+            )
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         """Forward an API request to the configured transport.
@@ -621,14 +650,34 @@ class ApiClient:
         )
 
 
-def client_from_environment(*, verify_tls: bool = True) -> ApiClient:
+def _environment_bool(name: str, default: bool) -> bool:
+    """Read a strict true/false environment setting."""
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ApiError(f"{name} must be a boolean value")
+
+
+def client_from_environment(
+    *, verify_tls: bool = True, ca_cert: str | None = None, strict_tls: bool | None = None
+) -> ApiClient:
     """Construct a client from environment settings.
 
     Args:
         verify_tls: Whether to verify the server certificate and hostname.
+        ca_cert: Optional PEM CA certificate or bundle path. If omitted, the
+            ``KANEO_CA_CERT`` environment variable is used when set.
+        strict_tls: Whether to enforce strict X.509 validation. If omitted,
+            ``KANEO_TLS_STRICT`` is used and defaults to ``True``.
 
     Returns:
-        A client configured from ``KANEO_API_URL`` and ``KANEO_API_KEY``.
+        A client configured from ``KANEO_API_URL``, ``KANEO_API_KEY``, and the
+        optional ``KANEO_CA_CERT`` path.
 
     Raises:
         ApiError: If ``KANEO_API_KEY`` is not set.
@@ -641,5 +690,13 @@ def client_from_environment(*, verify_tls: bool = True) -> ApiClient:
     if not key:
         raise ApiError("KANEO_API_KEY is required; set it in the environment")
     return ApiClient(
-        os.getenv("KANEO_API_URL", "http://localhost:1337"), key, verify_tls=verify_tls
+        os.getenv("KANEO_API_URL", "http://localhost:1337"),
+        key,
+        verify_tls=verify_tls,
+        ca_cert=ca_cert if ca_cert is not None else os.getenv("KANEO_CA_CERT"),
+        strict_tls=(
+            strict_tls
+            if strict_tls is not None
+            else _environment_bool("KANEO_TLS_STRICT", True)
+        ),
     )

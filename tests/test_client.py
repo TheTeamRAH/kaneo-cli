@@ -64,6 +64,40 @@ def test_http_transport_verifies_tls_by_default(monkeypatch):
     assert calls[0][2].check_hostname is True
 
 
+def test_http_transport_keeps_strict_certificate_validation_by_default():
+    context = HttpTransport("https://kaneo.example/api", "secret").ssl_context
+
+    assert context.verify_flags & ssl.VERIFY_X509_STRICT
+
+
+def test_http_transport_can_disable_only_strict_certificate_validation():
+    context = HttpTransport(
+        "https://kaneo.example/api", "secret", strict_tls=False
+    ).ssl_context
+
+    assert not context.verify_flags & ssl.VERIFY_X509_STRICT
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+
+
+def test_http_transport_adds_custom_ca_to_default_context(monkeypatch):
+    loaded = []
+
+    class RecordingContext:
+        check_hostname = True
+        verify_mode = ssl.CERT_REQUIRED
+        verify_flags = ssl.VERIFY_X509_STRICT
+
+        def load_verify_locations(self, *, cafile):
+            loaded.append(cafile)
+
+    monkeypatch.setattr(client_module.ssl, "create_default_context", RecordingContext)
+
+    HttpTransport("https://kaneo.example/api", "secret", ca_cert="/etc/kaneo/ca.pem")
+
+    assert loaded == ["/etc/kaneo/ca.pem"]
+
+
 def test_http_transport_can_explicitly_disable_tls_verification(monkeypatch):
     calls = []
 
@@ -78,6 +112,32 @@ def test_http_transport_can_explicitly_disable_tls_verification(monkeypatch):
     )
     assert calls[0][2].verify_mode == ssl.CERT_NONE
     assert calls[0][2].check_hostname is False
+
+
+def test_custom_ca_does_not_prevent_explicit_tls_disable(monkeypatch):
+    calls = []
+
+    class RecordingContext:
+        verify_mode = ssl.CERT_REQUIRED
+        check_hostname = True
+        verify_flags = ssl.VERIFY_X509_STRICT
+
+        def load_verify_locations(self, *, cafile):
+            assert cafile == "/etc/kaneo/ca.pem"
+
+    def fake_urlopen(request, *, timeout, context):
+        calls.append(context)
+        return _Response()
+
+    monkeypatch.setattr(client_module.ssl, "create_default_context", RecordingContext)
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    HttpTransport(
+        "https://kaneo.example/api", "secret", verify_tls=False, ca_cert="/etc/kaneo/ca.pem"
+    ).request("GET", "/health")
+
+    assert calls[0].verify_mode == ssl.CERT_NONE
+    assert calls[0].check_hostname is False
 
 
 def test_http_transport_makes_reorder_conflict_actionable(monkeypatch):
@@ -106,6 +166,65 @@ def test_api_client_passes_tls_setting_to_http_transport(monkeypatch):
 
     ApiClient("https://kaneo.example", "secret", verify_tls=False)
     assert transports == [False]
+
+
+def test_api_client_passes_strict_tls_setting_to_http_transport(monkeypatch):
+    transports = []
+
+    class RecordingTransport(HttpTransport):
+        def __init__(self, *args, **kwargs):
+            transports.append(kwargs["strict_tls"])
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(client_module, "HttpTransport", RecordingTransport)
+
+    ApiClient("https://kaneo.example", "secret", strict_tls=False)
+    assert transports == [False]
+
+
+def test_api_client_passes_custom_ca_to_http_transport(monkeypatch):
+    transports = []
+
+    class RecordingTransport:
+        def __init__(self, *args, **kwargs):
+            transports.append(kwargs["ca_cert"])
+
+    monkeypatch.setattr(client_module, "HttpTransport", RecordingTransport)
+
+    ApiClient("https://kaneo.example", "secret", ca_cert="/etc/kaneo/ca.pem")
+    assert transports == ["/etc/kaneo/ca.pem"]
+
+
+def test_client_from_environment_uses_custom_ca_path(monkeypatch):
+    monkeypatch.setenv("KANEO_API_KEY", "secret")
+    monkeypatch.setenv("KANEO_CA_CERT", "/etc/kaneo/ca.pem")
+    configured = []
+
+    class RecordingTransport:
+        def __init__(self, *args, **kwargs):
+            configured.append(kwargs["ca_cert"])
+
+    monkeypatch.setattr(client_module, "HttpTransport", RecordingTransport)
+
+    client_module.client_from_environment()
+
+    assert configured == ["/etc/kaneo/ca.pem"]
+
+
+def test_client_from_environment_uses_strict_tls_setting(monkeypatch):
+    monkeypatch.setenv("KANEO_API_KEY", "secret")
+    monkeypatch.setenv("KANEO_TLS_STRICT", "false")
+    configured = []
+
+    class RecordingTransport:
+        def __init__(self, *args, **kwargs):
+            configured.append(kwargs["strict_tls"])
+
+    monkeypatch.setattr(client_module, "HttpTransport", RecordingTransport)
+
+    client_module.client_from_environment()
+
+    assert configured == [False]
 
 
 def test_create_task_uses_project_path_and_excludes_project_from_payload():
